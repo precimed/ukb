@@ -14,6 +14,7 @@ import socket
 import getpass
 import six
 import itertools
+import csv
 
 __version__ = '1.0.0'
 MASTHEAD = "***********************************************************************\n"
@@ -37,7 +38,7 @@ def parse_args(args):
     parser = argparse.ArgumentParser(description="A collection of various utilities for GWAS summary statistics.")
 
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument("--out", type=str, default=None, help="prefix for the resulting files (<out>.csv, and others)")
+    parent_parser.add_argument("--out", type=str, default=None, help="prefix for the resulting files (<out>.csv, <out>.counts1.txt (counting number non-missing values), <out>.counts2.txt (counting number of non-zero values for all pairs of fields), etc)")
     parent_parser.add_argument("--log", type=str, default=None, help="filename for the log file. Default is <out>.log")
     parent_parser.add_argument("--log-append", action="store_true", default=False, help="append to existing log file. Default is to erase previous log file if it exists.")
     
@@ -52,15 +53,18 @@ def parse_args(args):
     parser_pheno.add_argument("--input-list", type=str,
         help="A text file containing the list of of input files")
     parser_pheno.add_argument("--fields", type=str, nargs='+', default=[],
-        help="A text file containing the list of fields to look for. Can not contain wild cards, but for a data field '12224-2.0' it is OK to specify 12224 or 12224-2. 'eid' column will be added automatically, but it's also OK to specify it.")
+        help="A text file containing the list of fields to look for. Does not accept wild cards, but for a data field '12224-2.0' it is OK to specify 12224 or 12224-2, to search for all variants of the field. 'eid' column is always added automatically, but it's also acceptable to include 'eid' in the --fields list.")
     parser_pheno.add_argument("--keep", type=str, default=None,
         help="accepts space/tab-delimited text file, without header, with individual IDs in the first column, and removes all unlisted samples from the analysis")
     parser_pheno.add_argument("--remove", type=str, default=None,
         help="accepts the same sort of file as --keep, and removes all listed subjects")
-    parser_pheno.add_argument("--allow-copies", action="store_true", default=False, help="When data field is present in multiple files, "
-        "normally the latest file is taken. When --allow-copies is specified, "
-        "all data field copies are retained. To avoid ambiguity we prefix data field name with the file that it comes from")
+    parser_pheno.add_argument("--allow-copies", action="store_true", default=False, help="When data field is present in multiple input files, "
+        "by default the field from the file with largest ID is used. When --allow-copies is specified, "
+        "all data field copies are retained. To avoid ambiguity, we prefix all data field names with the ID of the file that it comes from.")
     parser_pheno.add_argument("--dry-run", action="store_true", default=False, help="Just produce the .log file, skipping all actions.")
+    parser_pheno.add_argument("--quote-none", action="store_true", default=False, help="Sets pandas.to_csv(quoting=QUOTE_NONE). See pandas documentation for more details.")
+    parser_pheno.add_argument("--skip-counts2", action="store_true", default=False, help="Do not produce <out>.counts2.txt file")
+
     parser_pheno.set_defaults(func=make_pheno)
 
     return parser.parse_args(args)
@@ -93,6 +97,7 @@ def make_pheno(args, log):
     if len(args.fields) == 1:
         if os.path.isfile(args.fields[0]):
             args.fields = [x.strip() for x in open(args.fields[0], 'r').readlines() if (len(x.strip()) > 0)]
+    args.fields = [x for x in args.fields if (x != 'eid')]
     log.log('--fields file contain {} fields'.format(len(args.fields)))
 
     input_to_id_list = []
@@ -133,6 +138,7 @@ def make_pheno(args, log):
         log.log('Field {} expands to: {}'.format(field, ', '.join(expands[field])))
     args.fields = list(itertools.chain(*[expands[x] for x in args.fields if (x in expands)]))
     log.log("Final list of fields: {}".format(', '.join(args.fields)))
+    if len(args.fields) == 0: raise ValueError("no fields found!")
     for field in args.fields:
         if args.allow_copies: break
         if (cols_df['cols'] == field).sum() > 1:
@@ -151,7 +157,7 @@ def make_pheno(args, log):
 
         log.log('from {} reading {}...'.format(f, ', '.join(usecols)))
         if args.dry_run: continue
-        df = pd.read_csv(f, sep=',', usecols=['eid'] + usecols, dtype=str)
+        df = pd.read_csv(f, sep=',', usecols=['eid'] + usecols, dtype=str, encoding= 'unicode_escape')
         if args.allow_copies: df.columns = [('{}_ukb{}'.format(x, input_to_id[f]) if (x != 'eid') else 'eid') for x in df.columns]
         log.log('done, {} subjects, {} fields found'.format(df.shape[0], df.shape[1]))
         
@@ -169,11 +175,20 @@ def make_pheno(args, log):
         df_merged = df if (df_merged is None) else pd.merge(df_merged, df, how='outer', on='eid')
         log.log('after merging, combined data so far has {} subjects and {} fields'.format(df_merged.shape[0], df_merged.shape[1]))
 
-    if not args.dry_run:
-        log.log('Saving combined data frame to {}.csv ...'.format(args.out))
-        df_merged.to_csv('{}.csv'.format(args.out), sep=',', index=False)   # TBD - escape ""        
-    
-    log.log('Done (--dry-run)' if args.dry_run else 'Done.')
+    if args.dry_run:
+        log.log('Done (--dry-run)')
+        return
+
+    log.log('Saving combined data frame to {}.csv ...'.format(args.out))
+    df_merged.to_csv('{}.csv'.format(args.out), sep=',', index=False, quoting=(csv.QUOTE_NONE if args.quote_none else csv.QUOTE_MINIMAL))
+
+    df_merged.notnull().sum().reset_index().to_csv('{}.counts1.txt'.format(args.out), sep='\t', header=None, index=False)
+
+    if not args.skip_counts2:
+        v=df_merged.notnull().astype(float).values; m = np.dot(np.transpose(v), v); 
+        pd.DataFrame(m, columns=df_merged.columns, index=df_merged.columns).astype(int).to_csv('{}.counts2.txt'.format(args.out), sep='\t')
+
+    log.log('Done.')
 
 ### =================================================================================
 ###                                Misc stuff and helpers
@@ -264,7 +279,3 @@ if __name__ == "__main__":
         log.log('Analysis finished at {T}'.format(T=time.ctime()) )
         time_elapsed = round(time.time()-start_time,2)
         log.log('Total time elapsed: {T}'.format(T=sec_to_str(time_elapsed)))
-
-
-
-
