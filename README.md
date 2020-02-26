@@ -5,6 +5,8 @@ Helper tools to pre-process UK Biobank data.
 
 You feedback is very welcome! Please submit your feedback via github tickets - I might not have time to address it straightaway, but eventually I'll get to it. Happy UKBanking!
 
+P.S. if you happen to have ukb-related scripts that are handy for data logistics, feel free to upload them "as it is" to this repo. It doesn't matter if they are user-friendly or not, either way it's nice to keep it in one place.
+
 # demo
 ```
 >python /home/oleksandr/precimed/ukb/ukb_helper.py pheno --input "/space/gwas-syn1/1/data/GWAS/UKBioBank/phenotypes/Baskets/ukb2*csv" --fields 50 20216 20016 20510 21022 73
