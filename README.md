@@ -1,5 +1,9 @@
 # ukb
-Help tools to process UK Biobank data
+Help tools to pre-process UK Biobank data.
+
+``ukb_helper.py pheno`` functionality allows to look for a specific set of data fields across .csv files from ``<UKBDATA>/phenotypes/Baskets`` folder, and output the result as a .csv file. It also outputs the number of non-null values per field, and counts pairwise overlap. It accepts flexible format, so instead of `` 50-0.0`` it's OK to specify ``50-0`` or ``50`` (in the later case the tool will read ``50-0.0``, ``50-1.0``, and ``50-2.0`` fields). In the case when a field is present in multiple csv files, the file with largest ID will be used. ``--allow-copies`` allows to change this behavior, and output copies of a fields.
+
+You feedback is very welcome! Please submit your feedback via github tickets - I might not have time to address it straightaway, but eventually I'll get to it. Happy UKBanking!
 
 # demo
 ```
