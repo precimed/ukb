@@ -92,7 +92,14 @@ def make_pheno(args, log):
     args_input_csv = [x for x in args.input if x.endswith(".csv")]
     if (len(args_input_csv) == 0) or (len(args_input_csv) != len(args.input)):
         raise(ValueError('--input is either empty, or have files with extention other than .csv'))
-    for f in args.input: check_input_file(f)
+    
+    empty_list = []
+    for f in args.input:
+        check_input_file(f)
+        if os.stat(f).st_size == 0:
+            log.log("WARNING: {} file apears to be empty and will be ignored".format(f))
+            empty_list.append(f)
+    args.input = [f for f in args.input if (f not in empty_list)]
 
     if len(args.fields) == 1:
         if os.path.isfile(args.fields[0]):
