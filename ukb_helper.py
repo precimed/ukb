@@ -56,8 +56,8 @@ def parse_args(args):
         help="A text file containing the list of fields to look for. Does not accept wild cards, but for a data field '12224-2.0' it is OK to specify 12224 or 12224-2, to search for all variants of the field. 'eid' column is always added automatically, but it's also acceptable to include 'eid' in the --fields list.")
     parser_pheno.add_argument("--keep", type=str, default=None,
         help="accepts space/tab-delimited text file, without header, with individual IDs in the first column, and removes all unlisted samples from the analysis")
-    parser_pheno.add_argument("--remove", type=str, default=None,
-        help="accepts the same sort of file as --keep, and removes all listed subjects")
+    parser_pheno.add_argument("--remove", type=str, default=[], nargs='+',
+        help="accepts the same sort of file as --keep, and removes all listed subjects. Multiple exclusion lists are allowed. ")
     parser_pheno.add_argument("--allow-copies", action="store_true", default=False, help="When data field is present in multiple input files, "
         "by default the field from the file with largest ID is used. When --allow-copies is specified, "
         "all data field copies are retained. To avoid ambiguity, we prefix all data field names with the ID of the file that it comes from.")
@@ -74,8 +74,13 @@ def make_pheno(args, log):
     if args.keep is not None: check_input_file(args.keep)
     keep = None if (args.keep is None) else pd.read_csv(args.keep, header=None, delim_whitespace=True, usecols=[0], names=['eid'], dtype=str)
 
-    if args.remove is not None: check_input_file(args.remove)
-    remove = None if (args.remove is None) else set(pd.read_csv(args.remove, header=None, delim_whitespace=True, usecols=[0], names=['eid'], dtype=str)['eid'].values)
+    if not args.remove:
+        log.log("WARNING: --remove is not specified; make sure to exclude individuals who withdrawn their concent, by passing the latest withdrawal list as --remove argument (i.e. w27412_20210201.csv file, but you must find the latest one)")
+
+    for remove_file in args.remove:
+        check_input_file(remove_file)
+
+    remove_list = [set(pd.read_csv(remove_file, header=None, delim_whitespace=True, usecols=[0], names=['eid'], dtype=str)['eid'].values) for remove_file in args.remove]
 
     if (args.input_list is not None) and (len(args.input) > 0):
         raise ValueError("Can not use --input-list together with --input")
@@ -170,12 +175,12 @@ def make_pheno(args, log):
         
         if keep is not None:
             df = pd.merge(df, keep, how='inner', on='eid')
-            log.log('keep {} subjects due to --keep'.format(df.shape[0], df.shape[1]))
+            log.log('{} subjects due to --keep'.format(df.shape[0], df.shape[1]))
 
-        if remove is not None:
+        for remove, remove_file in zip(remove_list, args.remove):
             df['remove'] = [(x in remove) for x in df['eid'].values]
             df = df[~df['remove']].copy()
-            log.log('keep {} subjects due to --remove'.format(df.shape[0], df.shape[1]))
+            log.log('{} subjects remain after applying "--remove {}"'.format(df.shape[0], remove_file))
 
         if len(df) == 0: continue
 
