@@ -180,6 +180,7 @@ def make_pheno(args, log):
         for remove, remove_file in zip(remove_list, args.remove):
             df['remove'] = [(x in remove) for x in df['eid'].values]
             df = df[~df['remove']].copy()
+            del df['remove']
             log.log('{} subjects remain after applying "--remove {}"'.format(df.shape[0], remove_file))
 
         if len(df) == 0: continue
